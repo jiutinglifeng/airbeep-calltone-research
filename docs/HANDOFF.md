@@ -310,8 +310,28 @@ python airlift.py replace <ios_path> <local_file> [--backup <path>] [--device UD
 
 - 工作区：`/Users/jiutinglifeng/Documents/claude-code-test/airbeep`
 - 这是 **`LinkPass888/AirBeep` 的克隆**（作为研究素材），不是用户原创项目
-- git remote：`origin` = `LinkPass888/AirBeep`，`upstream` = `frs0n/placard`
 - 本次研究会话新增的内容都在 `docs/` 和 `artifacts/` 下，与上游源码分开
+
+### git remote 配置（⚠️ 别推错地方）
+
+| remote | 指向 | 用途 |
+|---|---|---|
+| **`myrepo`** | `jiutinglifeng/airbeep-calltone-research` | ✅ **我们自己的仓库，要推就推这里** |
+| `origin` | `LinkPass888/AirBeep` | ⛔ 上游别人的仓库，**只读参考，不要推** |
+| `upstream` | `frs0n/placard` | ⛔ 更上游，只读参考 |
+
+推送命令：`git push myrepo main`
+
+### 我们的仓库
+
+- 地址：**https://github.com/jiutinglifeng/airbeep-calltone-research**（public）
+- 已推送的 HEAD：`f314992`
+- 许可：GPL-3.0（继承自上游 AirBeep）
+- 注意：仓库里那两个 64 MB 的 `libairlift_ffi.a` 来自上游源码，GitHub 会警告超过 50 MB 推荐值，但推送是成功的、不影响使用
+
+### 已建立的会话目标
+
+为了让跨会话不丢目标，已创建一个持久化 goal（id `goal-75687702-246e-4999-a988-8c1892e9e8c9`），其 objective 里固化了四条关键约束（不升级系统、先读后写、检查 previousSize、重启后复测）。
 
 ### 本次会话产出的文档
 

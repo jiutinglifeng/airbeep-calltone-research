@@ -1,9 +1,27 @@
 # HANDOFF — 通话录音提示音消除项目
 
 > **给下一个 AI 会话的交接文档。** 请先完整读本文，再动手。
-> 本文写于 2026-10-11，用途是让在 **Windows 电脑**上重新开始的会话**零上下文损失**地接上。
+> 本文写于 2026-10-11，用途是让重新开始的会话**零上下文损失**地接上。
 >
 > **一句话现状**：方案已确定、材料已备齐、操作手册已写完，**尚未在真机上执行任何写操作**。
+
+---
+
+## 零、🔴 先读这里：现在有两条执行路线
+
+原本只有 Windows 路线，2026-10-11 又做出一条 **macOS 路线**。**先决定走哪条：**
+
+| | **路线 M：macOS（新增）** | **路线 W：Windows（作者验证过的）** |
+|---|---|---|
+| 需要 | 这台 Mac + 数据线 + iPhone | Intel/AMD Windows + 数据线 + iPhone |
+| 前提已验证？ | ✅ 库加载/符号绑定/枚举链路（本机实测） | ✅ 作者端到端验证过 27.0.1 |
+| 关键未知 | ⚠️ **`ATHostConnection*` 的实际行为未在 macOS 上验证过** | 无（但依赖未 pin，见第五章 bug） |
+| 目录 | `artifacts/airliftsilence/macos-port/` | `artifacts/airliftsilence/source-patched/` |
+| 说明 | 见该目录下 `README.md` | 见本文第六章 |
+
+**建议**：既然插手机的功夫一样，**先试 macOS**——第一条 `read` 命令跑通就说明成立，跑不通再换 Windows，损失很小。两条路线互不影响（macOS 版只改了本机的库加载，没动设备上任何东西）。
+
+> 下面的章节主要按 **Windows 路线** 写（它更成熟）。走 macOS 时，把命令里的 `python` 换成 `.venv/bin/python`、`cd source-patched` 换成 `cd macos-port`，其余逻辑（先读后写、哈希比对、`previousSize` 检查、救援流程）**完全一样**。
 
 ---
 
@@ -94,8 +112,10 @@ iOS 27.0.1 上所有 airlift 系工具都曾因设备报 `Grappa session could n
 | **`静音件生成.sh`** | ✅ **哈希不匹配时的回退方案**：按设备原件格式生成匹配的静音件（**需在 Mac 上跑**） | 纯文本，无需校验 |
 | `AirliftSilence-v1.0.0.exe` | 图形界面主程序，37 MB，PE32+ x86-64，**无 Authenticode 签名** | `3bb09e07d22660b9f98c3dd12cedd177af5802040d8c7aee52d89974e1de6e5e` |
 | `src/airlift.py` | ⚠️ **原版有 bug，不要用**（651 行），见下方「🔴 必读」 | `d15d59a0d86b4a6c3d8606eb50798fe30f77dbd72c1bb5cf2de1e53e3d8bb6e0` |
-| **`source-patched/`** | ✅ **实际要用的目录**：`airlift.py`(修补版) + `airlift_gui.py` + `silent/`，自包含。CLI 和 GUI 都受益 | `airlift.py` = `8b068e600b306bac8da982a7736c6017d0314a9c41e46666752c9065a3b44903` |
+| **`source-patched/`** | ✅ **Windows 路线要用的目录**：`airlift.py`(修补版) + `airlift_gui.py` + `silent/`，自包含。CLI 和 GUI 都受益 | `airlift.py` = `8b068e600b306bac8da982a7736c6017d0314a9c41e46666752c9065a3b44903` |
 | `source-patched/airlift-pymobiledevice3-compat.patch` | 修补内容的补丁原文，便于核对 | — |
+| **`macos-port/`** | ✅ **macOS 路线要用的目录**（零、路线 M）：在修补版基础上把库加载改成走 macOS framework，另修了字体与备份路径 | 见该目录 `README.md` |
+| `macos-port/macos-port.patch` | 相对 `source-patched/` 的改动原文 | — |
 | `src/airlift_gui.py` | 图形界面源码（251 行） | `cadfc463a646c666db0816e5da306402d14fde4798d933cfe82fcd47cfb5e88f` |
 | `src/README.zh-CN.md` | 作者原版中文说明 | — |
 | `src/silent/` | ⚠️ **Windows 版自带静音件，格式不匹配，不要用** | `efcde5b8…` / `c8ccb2c4…` |
@@ -140,7 +160,6 @@ python 设备体检.py pull <路径> <本地文件>       # 把残留文件抢�
 > 注意：仍需真机才能验证端到端行为（本机未连接 iPhone）。但逻辑分支与 API 契约已验证。
 
 ### 🔴 必读：原版 `src/airlift.py` 有一个会让你误判的 bug
-
 **症状**：设备明明连上了、也点了「信任此电脑」，工具却报 `no paired iPhone found`。
 
 **原因**（已在本机用 pymobiledevice3 **11.26.1** 复现确认）：`airlift.py:375` 有一行
@@ -540,6 +559,7 @@ python airlift.py replace <ios_path> <local_file> [--backup <path>] [--device UD
 7. **出错时先查 `docs/失败签名对照表.md`。** 它把 `airlift.py` 的全部错误串按「目标是否已被动过」分类。关键认知：**`read` 和 `replace` 都不是只读操作**，两者都会先移动目标文件；`read` 失败会把目标留空，`replace` 失败会把目标留成静音版。原件在两种情况下都留在 Media，都能救。
 8. **如果 dump 出来的原件与作者的 `original-*` 哈希不一致，不要硬写现成的静音件。** 回 Mac 上跑 `静音件生成.sh` 按实际格式生成。注意 `ffmpeg` 做不了 Opus/CAF，该脚本对 CAF 走的是 macOS 的 `afconvert`。
 9. 用户偏好：**简洁直接、给默认判断让他否决、先确认再大改**。不要用长篇风险免责声明淹没技术内容；他明确表示法律风险不用讨论。
+10. **先问用户走哪条路线**（见第零章）：macOS 更快、但 `ATHostConnection*` 未在 macOS 上验证过；Windows 是作者验证过的、但依赖未 pin 版本有 bug（已修）。**建议先试 macOS**——第一条 `read` 就能判断成败。
 
 ---
 

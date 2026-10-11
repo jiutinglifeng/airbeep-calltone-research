@@ -1,0 +1,115 @@
+--- source-patched/airlift.py	2026-10-11 14:22:59
++++ macos-port/airlift.py	2026-10-11 14:26:28
+@@ -55,12 +55,36 @@
+     "0101fc26f7e89d1635d86b5c886df69f526a0040038b6c33049f6bd5cc526b4ee7ccce614135d2c73f8326d9af6d28399a231510917493d4fdaa395b4d1c1e1b09bdf3fe6fb7e16ad6d5f5cc18b93730874e6f4e",
+ )
+ 
++# ---------------------------------------------------------------------------
++# 平台相关的库路径
++#
++# 上游只支持 Windows：它按目录找 AirTrafficHost.dll，并用 Windows 专有的
++# os.add_dll_directory() 注册搜索路径。
++#
++# macOS 上这两个库以 framework 形式存在、符号完全一致，所以只需换掉
++# 「在哪找」和「怎么加载」，其余所有 ctypes 签名绑定（见下方 AppleCF）都是
++# 平台通用的。
++#
++# 已在本机实测（macOS 27.0.1 / arm64）：
++#   AirTrafficHost  9/9 需要的符号可用
++#   CoreFoundation  8/8 需要的符号可用
++# ---------------------------------------------------------------------------
++_MACOS = sys.platform == "darwin"
++
+ APPLE_DLL_DIRS = (
+     r"C:\Program Files\Common Files\Apple\Mobile Device Support",
+     r"C:\Program Files\iTunes",
+     r"C:\Program Files (x86)\Common Files\Apple\Mobile Device Support",
+ )
+ 
++# CoreFoundation 在 macOS 上位于 dyld 共享缓存，os.path.isfile() 对它不可靠，
++# 必须交给 dyld 按名解析（ctypes.util.find_library 会给出正确路径）。
++MACOS_COREFOUNDATION = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
++MACOS_AIRTRAFFICHOST_CANDIDATES = (
++    "/System/Library/PrivateFrameworks/AirTrafficHost.framework/Versions/Current/AirTrafficHost",
++    "/System/Library/PrivateFrameworks/AirTrafficHost.framework/AirTrafficHost",
++)
++
+ class AirLiftError(RuntimeError):
+     def __init__(self, message: str, details: dict | None = None):
+         super().__init__(message)
+@@ -74,21 +98,11 @@
+ 
+ class AppleCF:
+     def __init__(self):
+-        dll_dir = None
+-        for d in APPLE_DLL_DIRS:
+-            if os.path.isfile(os.path.join(d, "AirTrafficHost.dll")):
+-                dll_dir = d
+-                break
+-        if not dll_dir:
+-            raise AirLiftError("iTunes not installed — need Apple Mobile Device Support DLLs")
++        if _MACOS:
++            self.cf, self.at = self._load_macos()
++        else:
++            self.cf, self.at = self._load_windows()
+ 
+-        for d in APPLE_DLL_DIRS:
+-            if os.path.isdir(d):
+-                os.add_dll_directory(d)
+-
+-        self.cf = ctypes.CDLL(os.path.join(dll_dir, "CoreFoundation.dll"))
+-        self.at = ctypes.CDLL(os.path.join(dll_dir, "AirTrafficHost.dll"))
+-
+         vp = ctypes.c_void_p
+         for fn, ret, args in [
+             (self.cf.CFStringCreateWithCString,   vp, [vp, ctypes.c_char_p, ctypes.c_uint32]),
+@@ -113,6 +127,49 @@
+                 fn.restype = ret
+             fn.argtypes = args
+ 
++    @staticmethod
++    def _load_macos():
++        """加载 macOS 上的两个 framework。"""
++        import ctypes.util
++
++        chosen_cf = ctypes.util.find_library("CoreFoundation") or MACOS_COREFOUNDATION
++        try:
++            cf = ctypes.CDLL(chosen_cf)
++        except OSError as exc:
++            raise AirLiftError(f"could not load CoreFoundation ({chosen_cf}): {exc}")
++
++        at = None
++        for path in MACOS_AIRTRAFFICHOST_CANDIDATES:
++            try:
++                at = ctypes.CDLL(path)
++                break
++            except OSError:
++                continue
++        if at is None:
++            raise AirLiftError(
++                "could not load AirTrafficHost.framework —— "
++                "该框架在较旧的 macOS 上可能不存在"
++            )
++        return cf, at
++
++    @staticmethod
++    def _load_windows():
++        """加载 Windows 上的两个 DLL（上游原有逻辑，保持不动）。"""
++        dll_dir = None
++        for d in APPLE_DLL_DIRS:
++            if os.path.isfile(os.path.join(d, "AirTrafficHost.dll")):
++                dll_dir = d
++                break
++        if not dll_dir:
++            raise AirLiftError("iTunes not installed — need Apple Mobile Device Support DLLs")
++
++        for d in APPLE_DLL_DIRS:
++            if os.path.isdir(d):
++                os.add_dll_directory(d)
++
++        return (ctypes.CDLL(os.path.join(dll_dir, "CoreFoundation.dll")),
++                ctypes.CDLL(os.path.join(dll_dir, "AirTrafficHost.dll")))
++
+     def cfstr(self, s: str):
+         return self.cf.CFStringCreateWithCString(None, s.encode(), 0x08000100)
+ 

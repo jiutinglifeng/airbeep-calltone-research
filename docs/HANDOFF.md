@@ -21,14 +21,24 @@
 
 ---
 
-## 二、🔴 最紧急的未完成事项
+## 二、🔴 最紧急的未完成事项（附时间压力）
 
 **让用户关闭 iPhone 的自动更新。**（设置 › 通用 › 软件更新 › 自动更新 → 全关）
 
 理由：该漏洞在 **iOS 27.2 beta 3 已被 Apple 修补**，一旦升级即永久失效。上游 AirCard-iOS README 原文警告：
 > **Do not update past iOS 27.2 beta 2**
 
-这个动作与后续技术步骤无关，但**时间窗一旦关闭，整个项目作废**。每次会话都应先确认这一条是否已完成。
+### ⏰ 硬截止时间：约 2026-10-26 那一周
+
+据 2026-10-08 报道（[数字今日](https://www.digitaltoday.co.kr/cn/view/112373/apple-ios-27-2-may-launch-in-late-october-existing-iphones-likely-to-skip-ios-27-1)，转引 9to5Mac）：
+
+- **iOS 27.2 正式版预计在 10 月下旬发布，最可能是 10 月 26 日那一周**，且不排除提前
+- **现有 iPhone 机型预计会跳过 iOS 27.1**（27.1 仅供 10 月 23 日发布的 iPhone Duo 出厂搭载）
+- 也就是说：**用户的下一次系统更新就是 27.2**，而 27.2 正式版必然包含 beta 3 里那个补丁
+
+**距今天（2026-10-11）大约 15 天。** 这是整个项目最硬的约束——不是技术问题，是日历问题。每次会话都先确认这一条。
+
+另外注意：即使关了「自动更新」，iOS 仍可能弹「立即更新」提示或尝试夜间安装。建议同时关闭「软件更新」里的自动下载/安装项，并提醒用户**不要点任何更新提示**。
 
 ---
 
@@ -71,6 +81,7 @@ iOS 27.0.1 上所有 airlift 系工具都曾因设备报 `Grappa session could n
 | **在 M4 Mac 上跑 ARM Windows 虚拟机** | Apple Mobile Device USB 驱动是**内核态**，微软规定内核态驱动必须原生 ARM64，而 Apple Mobile Device Support **没有 arm64 版本**。iPhone 大概率根本认不到 |
 | **AirliftSilence-iOS** | 门槛与 AirBeep 完全同级（需 LocalDevVPN + 配对 + 自签 IPA），无优势 |
 | **bl_sbx 系** | 只支持 iOS 18–26.2b1，不覆盖 iOS 27 |
+| **`Lumid-Off/AirCard-Windows`** | ⚠️ **曾被误认为备选，实测否掉。** 它是 Rust 原生 Windows 工具、README 明确支持 **iOS 18.0 – 27.0.1**（正是本设备版本），看起来很有希望；但源码里写死的目标路径只有 `Library/Passes/Cards`（钱包卡面）和 `Library/Caches`（锁屏主题），**完全没有 `CallServices` / `Disclosure` / 提示音的任何引用**（已 grep 全部 `.rs` 确认）。它做不了本任务，只做钱包卡面美化 |
 
 ---
 
@@ -78,12 +89,27 @@ iOS 27.0.1 上所有 airlift 系工具都曾因设备报 `Grappa session could n
 
 | 路径 | 说明 | SHA256 |
 |---|---|---|
+| **`预检.bat`** | ✅ **在 Windows 上第一件事就运行它**（见下方说明） | 纯文本，无需校验 |
 | `AirliftSilence-v1.0.0.exe` | 图形界面主程序，37 MB，PE32+ x86-64，**无 Authenticode 签名** | `3bb09e07d22660b9f98c3dd12cedd177af5802040d8c7aee52d89974e1de6e5e` |
-| `src/airlift.py` | ✅ **推荐用命令行版**，日志更全便于排障（651 行） | — |
-| `src/airlift_gui.py` | 图形界面源码（251 行） | — |
+| `src/airlift.py` | ✅ **推荐用命令行版**，日志更全便于排障（651 行） | `d15d59a0d86b4a6c3d8606eb50798fe30f77dbd72c1bb5cf2de1e53e3d8bb6e0` |
+| `src/airlift_gui.py` | 图形界面源码（251 行） | `cadfc463a646c666db0816e5da306402d14fde4798d933cfe82fcd47cfb5e88f` |
 | `src/README.zh-CN.md` | 作者原版中文说明 | — |
 | `src/silent/` | ⚠️ **Windows 版自带静音件，格式不匹配，不要用** | `efcde5b8…` / `c8ccb2c4…` |
 | `silent-ios-format/` | ✅ **推荐使用的静音件 + 作者 dump 的真机原件** | 见下表 |
+
+### `预检.bat` 做什么
+
+双击即可（用 `certutil`，不需要 Python）。它检查 5 项：
+
+1. **9 个文件的 SHA256 完整性**——防止从 GitHub / 网盘 / U 盘拷贝过程中损坏
+2. **`AirTrafficHost.dll` 是否存在**（漏洞的硬性依赖，缺失则整个方案无法运行）
+3. **Python 与 `pymobiledevice3` 是否就绪**
+4. **iPhone 是否已被 Windows 识别**（用 `Get-PnpDevice` 查）
+5. 提醒人工确认「自动更新已关闭」
+
+有失败项时它会**明确阻止你继续**，并打印下一步该做什么。
+
+> ⚠️ **诚实声明：这个脚本没有在真实 Windows 上执行过。** 它是本轮（2026-10-11）在 macOS 上写的，本机没有 wine/cmd 无法运行验证。已做的验证只有：9 个内嵌哈希逐个与源文件比对一致、标签与 `goto` 目标齐全、括号配对。如果它报错或计数不对，**不要相信它的结论**，直接手工用 `certutil -hashfile <文件> SHA256` 逐个比对，哈希值见本章表格与附录。
 
 ### 🔴 音频资源的格式陷阱（本项目最大的坑）
 
@@ -122,8 +148,11 @@ original-StopDisclosure.caf           6b9dd7f8a267a79b1ee2184e52d447c541f4bc7683
 
 ### 步骤 0：Windows 侧准备
 1. 安装 **64 位 iTunes** 或 **Apple Mobile Device Support**（必须，漏洞依赖 `AirTrafficHost.dll`）
-2. 把 `artifacts/airliftsilence/` 整个目录拷到 Windows
-3. ⚠️ exe 无签名，Windows Defender / SmartScreen 会拦；源码运行可绕开这一步
+2. 把 `artifacts/airliftsilence/` 整个目录拷到 Windows（也可直接从 https://github.com/jiutinglifeng/airbeep-calltone-research 拉，exe 已提交在仓库里）
+3. **双击运行 `预检.bat`** ← 🔴 **先做这一步**
+   - 它会校验 9 个文件的哈希、检查驱动/Python/设备连接，有失败项会阻止你继续
+   - ⚠️ 该脚本未在真实 Windows 上验证过，详见第五章的诚实声明；若它行为异常，改用手工 `certutil -hashfile <文件> SHA256` 逐个比对
+4. ⚠️ exe 无签名，Windows Defender / SmartScreen 会拦；源码运行可绕开这一步
 
 ### 步骤 1：连接
 数据线连 iPhone → **解锁** → 弹「信任此电脑」→ 点信任。
@@ -376,14 +405,57 @@ python airlift.py replace <ios_path> <local_file> [--backup <path>] [--device UD
 
 ## 十三、给下一个 AI 的提醒
 
-1. **不要重新调研方案。** 路线已经选定并排除过 6 条替代路线，理由都在第四章。直接进入执行。
+1. **不要重新调研方案。** 路线已经选定并排除过 7 条替代路线，理由都在第四章。直接进入执行。
 2. **不要用 GUI 的「去除提示音」按钮。** 它写入格式不匹配的静音件，具体见第五章。
 3. **严格按「先读后写」顺序。** `read` 是先验证后动手的关键设计，不要跳过。
 4. **盯住 JSON 的 `previousSize`。** 这是判断原件有没有安全备份的唯一信号。
 5. **每一步的输出都要向用户索取并判断**，尤其第 2 步的 dump 结果和哈希比对——那决定能否进第 3 步。
-6. 用户偏好：**简洁直接、给默认判断让他否决、先确认再大改**。不要用长篇风险免责声明淹没技术内容；他明确表示法律风险不用讨论。
+6. **先提醒时间窗。** 见第二章：iOS 27.2 正式版预计 10 月 26 日那周发布，届时方案作废。这件事优先级高于所有技术步骤。
+7. 用户偏好：**简洁直接、给默认判断让他否决、先确认再大改**。不要用长篇风险免责声明淹没技术内容；他明确表示法律风险不用讨论。
 
 ---
+
+## 附录：全部文件 SHA256 速查
+
+```
+【主程序与源码】
+AirliftSilence-v1.0.0.exe    3bb09e07d22660b9f98c3dd12cedd177af5802040d8c7aee52d89974e1de6e5e
+src/airlift.py               d15d59a0d86b4a6c3d8606eb50798fe30f77dbd72c1bb5cf2de1e53e3d8bb6e0
+src/airlift_gui.py           cadfc463a646c666db0816e5da306402d14fde4798d933cfe82fcd47cfb5e88f
+
+【✅ 推荐使用的静音件】
+silent-ios-format/silent-StartDisclosureWithTone.m4a  5f989711c74b60ad054d822d1202f52ebac37065cff9f7939c868644b8eaf177
+silent-ios-format/silent-StopDisclosure.caf           067b9b814203c67b5eed4855c353c044dee5d34081beaeab6e8224c6d850e950
+
+【作者 dump 的真机原件（用于比对用户设备）】
+silent-ios-format/original-StartDisclosureWithTone.m4a  e4ff9f8a0cfa1994321492c509bcd166e5ef6d341e9caa2b41631ef64eca3b47
+silent-ios-format/original-StopDisclosure.caf           6b9dd7f8a267a79b1ee2184e52d447c541f4bc76830424373a7bdf2fff9ef7be
+
+【⚠️ Windows 版自带静音件（不要用）】
+src/silent/StartDisclosureWithTone.m4a  efcde5b82b4ec6e9716e34622350dfed288142cbe4692d216141f347c8369580
+src/silent/StopDisclosure.caf           c8ccb2c43e24cdd8ffb49bc33b6c523003158685d312cbb2c835d81ecbe8349e
+
+【格式对照】
+                        Windows 自带(❌)      推荐用(✅)        真机原件
+Start .m4a              AAC 1.8340s          AAC 1.6718s       AAC 1.6186s
+Stop  .caf              PCM 1.7697s          Opus 1.9400s      Opus 1.9200s
+
+【目标文件】
+/var/mobile/Library/CallServices/Greetings/default/StartDisclosureWithTone.m4a
+/var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf
+
+【关键日期】
+2026-10-23   iPhone Duo 发布（预装 iOS 27.1，不向其他机型推送）
+2026-10-26   那周 —— iOS 27.2 正式版预计发布，漏洞作废的硬截止
+
+【设备】
+iPhone 18 Pro Max / iOS 27.0.1 (24A446)
+
+【我们的仓库】
+https://github.com/jiutinglifeng/airbeep-calltone-research
+推送用 git push myrepo main
+```
+
 
 *本文写于 2026-10-11，与用户在 Mac 上的研究会话交接。*
 *下一个会话在 Windows 上进行。*

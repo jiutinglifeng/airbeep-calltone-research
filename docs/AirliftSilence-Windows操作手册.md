@@ -28,12 +28,15 @@
 
 | 路径 | 说明 |
 |---|---|
+| **`预检.bat`** | ✅ **第一件事就双击运行它**（校验哈希、驱动、Python、设备连接） |
 | `AirliftSilence-v1.0.0.exe` | 图形界面主程序（37 MB，官方 v1.0.0） |
 | `src/airlift.py` | 源码：命令行版（**推荐用它，日志更全，便于排障**） |
 | `src/airlift_gui.py` | 源码：图形界面版 |
 | `src/README.zh-CN.md` | 作者原版中文说明 |
 | `src/silent/` | ⚠️ **Windows 版自带静音件（格式可能不匹配，不要用）** |
 | `silent-ios-format/` | ✅ **推荐使用的静音件 + 作者 dump 的真机原件** |
+
+> ⚠️ `预检.bat` 是在 macOS 上写的，**未在真实 Windows 上执行验证过**。已做的验证只有内嵌哈希与源文件一致、标签齐全、括号配对。若它行为异常（报错、计数不对），**不要相信它的结论**，改用 `certutil -hashfile <文件> SHA256` 手工逐个比对。
 
 ### 两套静音件的区别（关键）
 
@@ -52,7 +55,11 @@
 
 1. 安装 **64 位 iTunes** 或 **Apple Mobile Device Support**（必须，漏洞依赖 `AirTrafficHost.dll`）
 2. 把 `artifacts/airliftsilence/` 整个目录拷到 Windows
-3. ⚠️ exe **没有代码签名**，Windows Defender / SmartScreen 会拦。需要加白名单或临时关闭实时保护。源码运行可以避免这一步
+3. **双击运行 `预检.bat`** ← 🔴 **先做这一步**
+   - 校验 9 个文件的 SHA256（防止拷贝损坏）
+   - 检查 `AirTrafficHost.dll` / Python / `pymobiledevice3` / iPhone 连接
+   - 有失败项时会阻止你继续，并打印该做什么
+4. ⚠️ exe **没有代码签名**，Windows Defender / SmartScreen 会拦。需要加白名单或临时关闭实时保护。源码运行可以避免这一步
 
 ### 步骤 1：连接设备
 
@@ -60,6 +67,8 @@
 2. **解锁屏幕**
 3. 弹出「信任此电脑」→ 点信任
 4. iPhone 上「设置 › 隐私与安全性 › 开发者模式」**无需打开**（本方案不需要）
+
+> ⏰ **时间窗提醒**：iOS 27.2 正式版预计 **2026-10-26 那一周**发布，届时本方案永久失效。请确认 iPhone 的「自动更新」已全部关闭，且不要点任何更新提示。
 
 ### 步骤 2：检查设备（先跑这个）
 
@@ -199,6 +208,9 @@ Apple Silicon Mac 只能跑 **Windows 11 ARM**。而 iPhone 被 Windows 识别�
 
 ## 附录 B：关键数据速查
 
+> 全部文件与我们的仓库：**https://github.com/jiutinglifeng/airbeep-calltone-research**
+> 推送时用 `git push myrepo main`（`origin` 是上游别人的仓库，不要推）
+
 ```
 目标文件：
   /var/mobile/Library/CallServices/Greetings/default/StartDisclosureWithTone.m4a
@@ -206,15 +218,25 @@ Apple Silicon Mac 只能跑 **Windows 11 ARM**。而 iPhone 被 Windows 识别�
 
 项目：https://github.com/YiHoooong/AirliftSilence
 Release：v1.0.0（唯一版本）
-exe SHA256：3bb09e07d22660b9f98c3dd12cedd177af5802040d8c7aee52d89974e1de6e5e
 
-推荐静音件（iOS 格式）SHA256：
-  silent-StartDisclosureWithTone.m4a  5f989711c74b60ad054d822d1202f52ebac37065cff9f7939c868644b8eaf177
-  silent-StopDisclosure.caf           067b9b814203c67b5eed4855c353c044dee5d34081beaeab6e8224c6d850e950
+【主程序与源码 SHA256】
+AirliftSilence-v1.0.0.exe    3bb09e07d22660b9f98c3dd12cedd177af5802040d8c7aee52d89974e1de6e5e
+src/airlift.py               d15d59a0d86b4a6c3d8606eb50798fe30f77dbd72c1bb5cf2de1e53e3d8bb6e0
+src/airlift_gui.py           cadfc463a646c666db0816e5da306402d14fde4798d933cfe82fcd47cfb5e88f
 
-作者 dump 的真机原件 SHA256（用于比对你的设备）：
-  original-StartDisclosureWithTone.m4a  e4ff9f8a0cfa1994321492c509bcd166e5ef6d341e9caa2b41631ef64eca3b47
-  original-StopDisclosure.caf           6b9dd7f8a267a79b1ee2184e52d447c541f4bc76830424373a7bdf2fff9ef7be
+【推荐静音件（iOS 格式）SHA256】
+silent-StartDisclosureWithTone.m4a  5f989711c74b60ad054d822d1202f52ebac37065cff9f7939c868644b8eaf177
+silent-StopDisclosure.caf           067b9b814203c67b5eed4855c353c044dee5d34081beaeab6e8224c6d850e950
 
-设备：iPhone 18 Pro Max / iOS 27.0.1 (24A446)
+【作者 dump 的真机原件 SHA256（用于比对你的设备）】
+original-StartDisclosureWithTone.m4a  e4ff9f8a0cfa1994321492c509bcd166e5ef6d341e9caa2b41631ef64eca3b47
+original-StopDisclosure.caf           6b9dd7f8a267a79b1ee2184e52d447c541f4bc76830424373a7bdf2fff9ef7be
+
+【⚠️ Windows 自带静音件（不要用）】
+src/silent/StartDisclosureWithTone.m4a  efcde5b82b4ec6e9716e34622350dfed288142cbe4692d216141f347c8369580
+src/silent/StopDisclosure.caf           c8ccb2c43e24cdd8ffb49bc33b6c523003158685d312cbb2c835d81ecbe8349e
+
+【设备】iPhone 18 Pro Max / iOS 27.0.1 (24A446)
+
+【硬截止】iOS 27.2 正式版预计 2026-10-26 那一周发布，届时方案作废
 ```

@@ -1,0 +1,369 @@
+# HANDOFF — 通话录音提示音消除项目
+
+> **给下一个 AI 会话的交接文档。** 请先完整读本文，再动手。
+> 本文写于 2026-10-11，用途是让在 **Windows 电脑**上重新开始的会话**零上下文损失**地接上。
+>
+> **一句话现状**：方案已确定、材料已备齐、操作手册已写完，**尚未在真机上执行任何写操作**。
+
+---
+
+## 一、项目目标与设备
+
+| 项 | 值 |
+|---|---|
+| 目标 | 消除 iPhone 系统通话录音的开始/结束提示音 |
+| 设备 | **iPhone 18 Pro Max** |
+| 系统 | **iOS 27.0.1 (24A446)** ← 构建号已与用户截图核对确认 |
+| 目标文件 1 | `/var/mobile/Library/CallServices/Greetings/default/StartDisclosureWithTone.m4a` |
+| 目标文件 2 | `/var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf` |
+
+用户在中国大陆使用，已明确表示无需讨论法律风险（其判断：录音者本人为通话参与方时合法）。
+
+---
+
+## 二、🔴 最紧急的未完成事项
+
+**让用户关闭 iPhone 的自动更新。**（设置 › 通用 › 软件更新 › 自动更新 → 全关）
+
+理由：该漏洞在 **iOS 27.2 beta 3 已被 Apple 修补**，一旦升级即永久失效。上游 AirCard-iOS README 原文警告：
+> **Do not update past iOS 27.2 beta 2**
+
+这个动作与后续技术步骤无关，但**时间窗一旦关闭，整个项目作废**。每次会话都应先确认这一条是否已完成。
+
+---
+
+## 三、最终选定的方案
+
+### 结论：用 AirliftSilence（Windows 版）
+
+项目：https://github.com/YiHoooong/AirliftSilence
+本地材料：`artifacts/airliftsilence/`
+
+**为什么选它**——它一次性消掉了另外两条路线的全部障碍：
+
+| 麻烦 | AirBeep（iOS 路线） | AirliftSilence（已选定） |
+|---|---|---|
+| IPA 重签名 | 必须 | **不需要** |
+| 免费 Apple ID 的 7 天限制 | 有 | **无关** |
+| LocalDevVPN / 回环隧道 | 必需 | **不需要** |
+| 美区 Apple ID | 需要 | **不需要** |
+| iPhone 上装任何东西 | 要装 App | **什么都不用装** |
+| 备份位置 | App 的 Documents（重装即失） | **Windows 电脑本地** |
+| 连接方式 | 无线配对 | **一根数据线** |
+
+原理：AirTraffic / ATAirlock 沙盒逃逸，与 AirBeep **同源**，但入口不同——它走**经典 USB lockdown + `AirTrafficHost.dll`**，而不是 AirBeep 那条 RSD shim 隧道。
+
+### 为什么不需要 Grappa 之外的额外处理
+
+iOS 27.0.1 上所有 airlift 系工具都曾因设备报 `Grappa session could not be established. Aborting` 而失效（表现为 `SyncFailed {ErrorCode: 4}`）。AirliftSilence 通过在 `HostInfo` 里注入 10 个预生成的 Grappa 客户端令牌解决。令牌来自 AirCard-iOS，**与 AirBeep 的 `GrappaHelper.m` 里内置的完全相同**（已核对）。
+
+这也解释了为什么 **AirBeep v2.4.0 砍掉了启动时的状态检测**——它没有做 Grappa 修复，读取在 27.0.1 上不稳定。
+
+---
+
+## 四、已排除的路线（不要再走一遍）
+
+| 路线 | 排除原因 |
+|---|---|
+| **AirBeep（iOS App）** | 需要 未签名 IPA 重签名 + LocalDevVPN 回环隧道；而 LocalDevVPN 自 2025-12-18 起在中国大陆区下架（美区免费在架，需美区 Apple ID）。且**仓库内静态库过期**，新克隆用 Xcode 直接构建会链接失败 |
+| **从源码构建 AirBeep** | 必须先跑 `scripts/build-airlift-xcframework.sh` 重建 Rust 静态库，需 Rust + Xcode 27 + 网络；本机（Mac）无 Xcode、无 Rust |
+| **上游 airlift（Mac 端 CLI）** | `Makefile` 依赖 `xcrun clang` 和系统私有框架；PoC 只验证过**新建文件**而非覆盖已有文件；且有一份 [iOS 27.0 实机失败报告](https://github.com/0xjohnnydev/airlift/issues/4)（`streaming_zip_conduit` 在 27.x 上被 entitlement-gated，staging 都过不去）。上游项目最后 push 2026-09-15，基本停更 |
+| **在 M4 Mac 上跑 ARM Windows 虚拟机** | Apple Mobile Device USB 驱动是**内核态**，微软规定内核态驱动必须原生 ARM64，而 Apple Mobile Device Support **没有 arm64 版本**。iPhone 大概率根本认不到 |
+| **AirliftSilence-iOS** | 门槛与 AirBeep 完全同级（需 LocalDevVPN + 配对 + 自签 IPA），无优势 |
+| **bl_sbx 系** | 只支持 iOS 18–26.2b1，不覆盖 iOS 27 |
+
+---
+
+## 五、材料清单（`artifacts/airliftsilence/`）
+
+| 路径 | 说明 | SHA256 |
+|---|---|---|
+| `AirliftSilence-v1.0.0.exe` | 图形界面主程序，37 MB，PE32+ x86-64，**无 Authenticode 签名** | `3bb09e07d22660b9f98c3dd12cedd177af5802040d8c7aee52d89974e1de6e5e` |
+| `src/airlift.py` | ✅ **推荐用命令行版**，日志更全便于排障（651 行） | — |
+| `src/airlift_gui.py` | 图形界面源码（251 行） | — |
+| `src/README.zh-CN.md` | 作者原版中文说明 | — |
+| `src/silent/` | ⚠️ **Windows 版自带静音件，格式不匹配，不要用** | `efcde5b8…` / `c8ccb2c4…` |
+| `silent-ios-format/` | ✅ **推荐使用的静音件 + 作者 dump 的真机原件** | 见下表 |
+
+### 🔴 音频资源的格式陷阱（本项目最大的坑）
+
+AirBeep 打包的静音件与 AirliftSilence **Windows 版自带的完全相同**（sha256 一致），但**两者都与真机原件不匹配**：
+
+| 文件 | Windows 自带（❌ 不要用） | ✅ 推荐使用的（`silent-ios-format/`） | 真机原件 |
+|---|---|---|---|
+| `StartDisclosureWithTone.m4a` | AAC 44.1k **1.8340 s** | AAC 44.1k **1.6718 s** | AAC 44.1k 1.6186 s |
+| `StopDisclosure.caf` | **PCM** 48k **1.7697 s** | **Opus** 48k **1.9400 s** | **Opus** 48k 1.9200 s |
+
+**Stop 提示音的问题最大**：真机上是 **Opus**，Windows 版写的是 **PCM**，还短了 150 ms。
+
+作者在自己的 iOS 仓库（`YiHoooong/AirliftSilence-iOS`）里配的那套才是按真机格式做的，已经取出放在 `silent-ios-format/`。
+
+**因此：不要点 GUI 上那个「去除提示音」按钮**（它会写入 Windows 自带那套）。必须用命令行显式指定正确文件。
+
+### 推荐静音件 SHA256
+
+```
+silent-StartDisclosureWithTone.m4a  5f989711c74b60ad054d822d1202f52ebac37065cff9f7939c868644b8eaf177
+silent-StopDisclosure.caf           067b9b814203c67b5eed4855c353c044dee5d34081beaeab6e8224c6d850e950
+```
+
+### 作者 dump 的真机原件 SHA256（用于比对用户设备）
+
+```
+original-StartDisclosureWithTone.m4a  e4ff9f8a0cfa1994321492c509bcd166e5ef6d341e9caa2b41631ef64eca3b47
+original-StopDisclosure.caf           6b9dd7f8a267a79b1ee2184e52d447c541f4bc76830424373a7bdf2fff9ef7be
+```
+
+---
+
+## 六、操作流程（关键在「先读后写」）
+
+详细步骤见 **`docs/AirliftSilence-Windows操作手册.md`**。核心顺序：
+
+### 步骤 0：Windows 侧准备
+1. 安装 **64 位 iTunes** 或 **Apple Mobile Device Support**（必须，漏洞依赖 `AirTrafficHost.dll`）
+2. 把 `artifacts/airliftsilence/` 整个目录拷到 Windows
+3. ⚠️ exe 无签名，Windows Defender / SmartScreen 会拦；源码运行可绕开这一步
+
+### 步骤 1：连接
+数据线连 iPhone → **解锁** → 弹「信任此电脑」→ 点信任。
+**「开发者模式」无需打开**（本方案不需要）。
+
+### 步骤 2：先 dump 原件（🔴 关键设计）
+
+```cmd
+pip install pymobiledevice3
+cd src
+python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf backup-StopDisclosure.caf --logging
+python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StartDisclosureWithTone.m4a backup-StartDisclosureWithTone.m4a --logging
+```
+
+**为什么先跑 `read`：**
+- `read` 是**往返操作**（移到 Media → 读出 → 写回原位），成功时文件回到原样
+- 所以它**同时完成了备份和管道验证**
+- **万一 `read` 就失败，用户还没写任何东西**，损失最小
+
+> 预期会打印 `⚠ 这个 iOS 版本没有在作者的测试列表里`——**这是正常的**。作者忘了把 `24A446` 加进代码白名单（`airlift.py:26` 的 `TESTED_BUILDS` 只有 `("27.0","24A435")` 和 `("27.0","24A5390f")`），但 README 明确写了 24A446 已验证。这只是警告，不阻止操作。
+
+**dump 完立刻做两件事：**
+
+**① 比对格式**（🔴 决定能否继续）：
+
+```cmd
+certutil -hashfile backup-StopDisclosure.caf SHA256
+```
+
+- **与 `original-StopDisclosure.caf` 哈希一致** → 用户设备音频与作者 dump 的完全相同，`silent-ios-format/` 可以直接用
+- **不一致** → 🔴 **停下来**。说明该设备音频资产有差异（作者已承认这些文件会被 Apple 的 MobileAsset 静默更新替换过）。需要用 dump 出来的原件的**编码格式与时长**重新生成静音件，再继续
+
+**② 把 dump 出来的原件复制到 U 盘 / 云盘**，不要只留在 Windows 上
+
+### 步骤 3：替换
+
+```cmd
+python airlift.py replace /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf ..\silent-ios-format\silent-StopDisclosure.caf --backup device-backup-StopDisclosure.caf --logging
+
+python airlift.py replace /var/mobile/Library/CallServices/Greetings/default/StartDisclosureWithTone.m4a ..\silent-ios-format\silent-StartDisclosureWithTone.m4a --backup device-backup-StartDisclosureWithTone.m4a --logging
+```
+
+每次约 2–4 分钟，全程保持解锁 + 连着数据线。
+
+**🔴 每次替换后必须检查输出的 JSON：**
+
+```json
+{"ok": true, "replaced": "...", "size": 1399, "previousSize": 44325, "backup": "...\\device-backup-StopDisclosure.caf"}
+```
+
+| 输出 | 含义 | 动作 |
+|---|---|---|
+| `previousSize` 是数字，且 backup 文件存在 | ✅ 原件已成功读回并备份 | 继续 |
+| `previousSize: null` / `backup: null` | 🔴 **原件没读回来**，留在设备 Media 目录（`airlift-replaced-<token>`） | **立刻停止**，按手册第四章情况 A 救回 |
+
+### 步骤 4：实测
+1. 打电话 → 开始录音 → 听是否还有提示音
+2. 结束录音 → 听是否还有提示音
+3. **重启手机，再测一次**（见第七章风险）
+
+---
+
+## 七、已知风险（必须向用户交代）
+
+| 级别 | 风险 | 应对 |
+|---|---|---|
+| 🔴 | **「重启后依然有效」只有作者说过。** 作者在 README 称 27.0.1 上重启后有效，但有一条**第三方报告**（[AirliftSilence-iOS issue #3](https://github.com/YiHoooong/AirliftSilence-iOS/issues/3)，用户 karttv，iPhone 12 Pro / iOS 18.7.8）明确说：**"Windows 和 iOS 两个客户端都可成功替换。重启后，实际通话的提示音重新出现。"** | 重启后必须实测；失效就重跑一次 |
+| 🟠 | **无第三方在 27.0.1 上复现。** 该仓库 **0 issue / 0 PR / Discussions 关闭**，`Verified on 27.0.1` 100% 是作者自述 | 步骤 2 的独立 dump 是唯一保险 |
+| 🟠 | **随时可能被 Apple 修掉**（27.2 beta 3 已修） | 立刻关闭自动更新 |
+| 🟠 | **音频资产可能被静默更新**（作者承认发生过一次） | 提示音自己回来了就重跑一遍 |
+| 🟡 | **`replace` 是 fork 新增代码。** 上游只验证过 fresh-file writes，覆盖已有文件这条路径**无第三方复核** | 步骤 2 先用 `read` 验证管道 |
+| 🟡 | **exe 无签名**，且 37 MB PyInstaller 产物无法逐行审计 | 改用源码运行（`src/*.py` 完全可读） |
+
+**乐观面**：机制只是「移动文件 + 写文件」，不刷固件、不动系统分区，**无变砖机理**。最坏情况是目标路径缺一个提示音文件，可手工补回。
+
+---
+
+## 八、失败恢复预案
+
+唯一失败模式：**原件被移到 Media 后没被写回**，表现为目标路径缺失文件。
+
+### 找回留在 Media 的原件（AFC 可直接读，无需 exploit）
+
+```cmd
+python -c "import asyncio; from pymobiledevice3.lockdown import create_using_usbmux; from pymobiledevice3.services.afc import AfcService
+async def m():
+    ld = await create_using_usbmux()
+    afc = AfcService(lockdown=ld)
+    await afc.connect()
+    d = await afc.get_file_contents('/var/mobile/Media/airlift-replaced-XXX')
+    open('rescued.caf','wb').write(d)
+    print(len(d))
+asyncio.run(m())"
+```
+
+### 写回（此时目标路径是空的，用 `write` 正好适用）
+
+```cmd
+python airlift.py write /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf rescued.caf --logging
+```
+
+### 如果工具自带备份也丢了
+
+用步骤 2 里复制到 U 盘的独立 dump，同样用 `write` 命令写回。
+
+---
+
+## 九、技术背景（供理解与排障）
+
+### 漏洞机制
+
+AirTraffic 是 Apple 从 Mac 同步媒体（含 Books）到 iOS 的官方通道。逃逸点：
+
+1. 通过 `com.apple.streaming_zip_conduit` 上传特制 StreamingZip 包，内含**相对符号链接** `p0/p1/p2/link → ../../../<目标路径>`
+2. 用 AFC 覆盖写 `Media/Books/Sync/Books.plist`，其 AssetID 带 `..` 路径
+3. 跑完整 AirTraffic 状态机（`HostInfo → RequestingSync → ReadyForSync → FinishedSyncingMetadata → AssetManifest → FileComplete`）
+4. **漏洞点在 `-[ATAirlock processCompletedAsset:]`**：
+   - AssetID（identifier）**未做路径校验**，可用 `..` 逃出 `/var/mobile/Media/Airlock/Book`
+   - destination **只做字符串前缀检查** `hasPrefix:@"/var/mobile/Media/"`，不解析符号链接后的真实路径
+   - 最后用 `moveItemAtPath:`，第一次移动符号链接、第二次以它为跳板把内容写到 Media 之外
+
+### 替换为什么是「先搬走再写」
+
+AirTraffic 的 `moveItemAtPath:toPath:` **不允许覆盖已存在文件**。所以「替换」实际是：
+
+```
+第一步：把目标文件搬到 Media 的临时名 (airlift-replaced-<token>)  ← 原位空出来
+第二步：把软链接搬到 Media
+第三步：把 payload 写进 lnk/leaf                             ← 在空出的原位新建
+```
+
+**安全设计**：`_cleanup` 只在 `previous is not None` 时才删 Media 里的原件（`airlift.py:529-531`）——**宁可留副本也不毁原件**。
+
+### 涉及的私有服务
+
+```
+主机侧（Windows）：AirTrafficHost.dll + CoreFoundation.dll（ctypes 调用）
+iOS 侧：         com.apple.streaming_zip_conduit → com.apple.afc → com.apple.atc
+                 → AirTrafficDevice → Books sync client → ATLegacyAssetLink → ATAirlock
+```
+
+### CLI 语法参考（`airlift.py`）
+
+```
+python airlift.py write   <ios_path> <local_file> [--device UDID] [--logging]
+python airlift.py read    <ios_path> <output_file> [--device UDID] [--logging]
+python airlift.py replace <ios_path> <local_file> [--backup <path>] [--device UDID] [--logging]
+```
+
+`--backup` **只在成功读回原件时才写文件**，所以必须看 JSON 里的 `previousSize`。
+
+### Grappa 令牌
+
+10 个预生成令牌，为 `(version=1, deviceType=0, protocolVersion=1)` 生成——正是 iOS 27 设备广播的参数。**不是每台设备一份**。来源：AirCard-iOS 的 `GrappaHelper.m`。
+
+作者原话：「**27.0.1 并没有修掉这个漏洞 —— 它只是加了一道锁，而钥匙是通用的。**」
+
+---
+
+## 十、环境事实（便于判断工具可用性）
+
+### 用户的 Mac（已检查）
+| 项 | 状态 |
+|---|---|
+| 系统 | macOS 27.0.1 (26A434)，Apple M4 |
+| Xcode | ❌ **未安装**（`xcode-select` 指向 Command Line Tools） |
+| Rust 工具链 | ❌ 未安装 |
+| 侧载工具 | ❌ 均未安装 |
+
+### 用户的 Windows
+- **Intel/AMD 架构**（已确认）→ AirliftSilence 可用
+- 曾有会话误判为「只有 Mac」，后经用户澄清存在独立 Windows 电脑
+
+### 用户的 Apple ID
+- **只有免费 Apple ID**，明确不打算购买付费开发者账号
+- （本方案不需要任何签名，此条已不构成约束）
+
+### GitHub CLI（用户 Mac 上）
+- `gh` v2.97.0，已认证为 **`jiutinglifeng`**，scope 含 `repo`、`workflow`
+
+---
+
+## 十一、仓库状态
+
+- 工作区：`/Users/jiutinglifeng/Documents/claude-code-test/airbeep`
+- 这是 **`LinkPass888/AirBeep` 的克隆**（作为研究素材），不是用户原创项目
+- git remote：`origin` = `LinkPass888/AirBeep`，`upstream` = `frs0n/placard`
+- 本次研究会话新增的内容都在 `docs/` 和 `artifacts/` 下，与上游源码分开
+
+### 本次会话产出的文档
+
+| 文件 | 内容 |
+|---|---|
+| `docs/HANDOFF.md` | **本文** |
+| `docs/AirliftSilence-Windows操作手册.md` | 最终方案的操作手册 |
+| `docs/AirBeep-技术方案与实施文档.md` | AirBeep 方案分析（**已不是主路线**，保留作参考） |
+| `docs/2026-10-11-核查补充.md` | GPT 对上述文档的核查与修正 |
+| `docs/reference/` | 核查用原始证据（补丁全文、pin 版本源码、上游 README 等） |
+
+---
+
+## 十二、下次会话的待办清单
+
+### 立即
+- [ ] **确认用户已关闭 iPhone 自动更新**（最紧急，窗口在关闭）
+
+### 执行
+- [ ] 在 Windows 上装 64 位 iTunes / Apple Mobile Device Support
+- [ ] 把 `artifacts/airliftsilence/` 拷到 Windows
+- [ ] 连设备、信任
+- [ ] **先跑 `read`** dump 两个原件
+- [ ] **比对哈希**：`backup-*` vs `silent-ios-format/original-*`
+  - [ ] 一致 → 继续
+  - [ ] 不一致 → 🔴 停下，按设备实际格式重新生成静音件
+- [ ] 把 dump 的原件复制到 U 盘
+- [ ] 用 `replace` 写入 `silent-ios-format/` 那套静音件
+- [ ] 检查每次的 JSON `previousSize` 不为 null
+- [ ] 打电话实测
+
+### 验证
+- [ ] **重启手机后再测一次**（验证「重启失效」风险是否为真）
+- [ ] 记录 Media 目录是否残留 `airlift-replaced-*`
+
+### 未解决 / 待观察
+- [ ] 用户设备上的 `StopDisclosure.caf` 究竟是 Opus 还是 PCM？**只有 dump 出来才知道**——这决定 `silent-ios-format/` 能否直接用
+- [ ] 「重启后依然有效」在 24A446 上成立吗？（作者说成立，第三方在 18.7.8 上说不成立）
+- [ ] 若 `silent-ios-format/` 也不匹配，需按实际格式用 ffmpeg 重新生成静音件（作者用的是 `anullsrc`）
+
+---
+
+## 十三、给下一个 AI 的提醒
+
+1. **不要重新调研方案。** 路线已经选定并排除过 6 条替代路线，理由都在第四章。直接进入执行。
+2. **不要用 GUI 的「去除提示音」按钮。** 它写入格式不匹配的静音件，具体见第五章。
+3. **严格按「先读后写」顺序。** `read` 是先验证后动手的关键设计，不要跳过。
+4. **盯住 JSON 的 `previousSize`。** 这是判断原件有没有安全备份的唯一信号。
+5. **每一步的输出都要向用户索取并判断**，尤其第 2 步的 dump 结果和哈希比对——那决定能否进第 3 步。
+6. 用户偏好：**简洁直接、给默认判断让他否决、先确认再大改**。不要用长篇风险免责声明淹没技术内容；他明确表示法律风险不用讨论。
+
+---
+
+*本文写于 2026-10-11，与用户在 Mac 上的研究会话交接。*
+*下一个会话在 Windows 上进行。*

@@ -29,6 +29,7 @@
 | 路径 | 说明 |
 |---|---|
 | **`预检.bat`** | ✅ **第一件事就双击运行它**（校验哈希、驱动、Python、设备连接） |
+| **`设备体检.py`** | ✅ **只读救援工具**，写操作前后都该跑（详见第四章） |
 | `AirliftSilence-v1.0.0.exe` | 图形界面主程序（37 MB，官方 v1.0.0） |
 | `src/airlift.py` | 源码：命令行版（**推荐用它，日志更全，便于排障**） |
 | `src/airlift_gui.py` | 源码：图形界面版 |
@@ -86,6 +87,16 @@ python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StopDi
 
 在替换之前，**务必先把当前设备上的两个文件读出来存好**。这是你唯一的独立保险。
 
+**但先做一次零风险的体检：**
+
+```cmd
+python 设备体检.py scan
+```
+
+它只读 Media 目录、不触发 exploit。**如果报告发现 `airlift-replaced-*` 或 `airlift-recovered-*`，先按第四章把它抢救出来再往下走**——那可能是之前中断留下的原件。
+
+**确认干净后，再 dump 两个原件：**
+
 ```cmd
 python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf backup-StopDisclosure.caf --logging
 python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StartDisclosureWithTone.m4a backup-StartDisclosureWithTone.m4a --logging
@@ -140,6 +151,24 @@ python airlift.py replace /var/mobile/Library/CallServices/Greetings/default/Sta
 ## 四、如果中途失败怎么救
 
 这套机制的失败模式只有一种：**原件被移到 Media 后没被写回**，表现为目标路径缺失文件。**不会变砖**——它只是移动和写入文件，不刷固件、不动系统分区。
+
+### 🔴 首选方法：用 `设备体检.py`（只读，已测试）
+
+**为什么它能找到原件**：`airlift.py` 的 `_validate_path()` 只禁止写 `/var/mobile/Media`——因为那个目录属于**普通 AFC**，不需要逃逸就能直接读。而失败时原件恰好被留在那里。**所以需要检查的地方正好是可以安全读取的地方。**
+
+```cmd
+python 设备体检.py scan
+```
+
+输出会列出所有 `airlift-*` 残留，标出哪些可能是原件、给出大小与 SHA256，**并直接打印该执行的抢救命令**：
+
+```cmd
+python 设备体检.py pull /var/mobile/Media/airlift-replaced-XXX rescued.bin
+```
+
+抢救后，把打印出的 SHA256 与已知原件哈希（见附录 B）比对。**匹配就说明找回了唯一的一份原件，立刻复制到 U 盘。**
+
+> 这个脚本**只读**，跑多少次都不改动设备。已用模拟设备跑通 5 个场景（含字节一致性校验），但仍需真机验证端到端行为。
 
 ### 情况 A：`replace` 报错，原件停在 Media
 

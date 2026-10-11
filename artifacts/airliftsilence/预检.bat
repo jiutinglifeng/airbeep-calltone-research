@@ -124,13 +124,21 @@ if defined PD3MISSING (
   echo   先装依赖：  pip install pymobiledevice3
   echo.
 )
-echo   下一步是【先 dump 原件，不要先写】：
+echo   第 1 步：先做一次零风险的设备体检（只读，不触发 exploit）
+echo.
+echo     python 设备体检.py scan
+echo.
+echo     如果它报告发现 airlift-replaced-* 或 airlift-recovered-*，
+echo     先按操作手册第四章把它抢救出来，再往下走。
+echo.
+echo   第 2 步：dump 原件（不要先写！）
 echo.
 echo     cd src
 echo     python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf backup-StopDisclosure.caf --logging
 echo     python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StartDisclosureWithTone.m4a backup-StartDisclosureWithTone.m4a --logging
 echo.
-echo   然后比对格式是否匹配（这一步决定能否继续）：
+echo   第 3 步：比对格式是否匹配（决定能否继续）
+echo.
 echo     certutil -hashfile backup-StopDisclosure.caf SHA256
 echo     期望值 6b9dd7f8a267a79b1ee2184e52d447c541f4bc76830424373a7bdf2fff9ef7be
 echo.

@@ -90,6 +90,7 @@ iOS 27.0.1 上所有 airlift 系工具都曾因设备报 `Grappa session could n
 | 路径 | 说明 | SHA256 |
 |---|---|---|
 | **`预检.bat`** | ✅ **在 Windows 上第一件事就运行它**（见下方说明） | 纯文本，无需校验 |
+| **`设备体检.py`** | ✅ **写操作前后都该跑**：只读扫描设备 Media 里的残留文件（见下方说明） | 纯文本，无需校验 |
 | `AirliftSilence-v1.0.0.exe` | 图形界面主程序，37 MB，PE32+ x86-64，**无 Authenticode 签名** | `3bb09e07d22660b9f98c3dd12cedd177af5802040d8c7aee52d89974e1de6e5e` |
 | `src/airlift.py` | ✅ **推荐用命令行版**，日志更全便于排障（651 行） | `d15d59a0d86b4a6c3d8606eb50798fe30f77dbd72c1bb5cf2de1e53e3d8bb6e0` |
 | `src/airlift_gui.py` | 图形界面源码（251 行） | `cadfc463a646c666db0816e5da306402d14fde4798d933cfe82fcd47cfb5e88f` |
@@ -110,6 +111,30 @@ iOS 27.0.1 上所有 airlift 系工具都曾因设备报 `Grappa session could n
 有失败项时它会**明确阻止你继续**，并打印下一步该做什么。
 
 > ⚠️ **诚实声明：这个脚本没有在真实 Windows 上执行过。** 它是本轮（2026-10-11）在 macOS 上写的，本机没有 wine/cmd 无法运行验证。已做的验证只有：9 个内嵌哈希逐个与源文件比对一致、标签与 `goto` 目标齐全、括号配对。如果它报错或计数不对，**不要相信它的结论**，直接手工用 `certutil -hashfile <文件> SHA256` 逐个比对，哈希值见本章表格与附录。
+
+### `设备体检.py` 做什么（🔴 本方案最重要的补充工具）
+
+**它是一个只读的救援工具，全程不触发 exploit、不修改设备上任何文件。**
+
+关键洞察：`airlift.py` 的 `_validate_path()` 只禁止写 `/var/mobile/Media`，因为**那个目录是普通 AFC 的管辖范围，不需要逃逸就能直接读**。而 AirTraffic 逃逸的失败模式恰好是「把原件搬到 Media 后没写回」——**所以需要检查的地方正是 Media，而它恰好可以安全读取**。
+
+三个子命令：
+
+```cmd
+python 设备体检.py list                        # 列出 Media 中的 airlift 残留
+python 设备体检.py scan                        # 识别残留，报告大小、哈希，并给出救援命令
+python 设备体检.py pull <路径> <本地文件>       # 把残留文件抢救到本地
+```
+
+**为什么它很重要**：`replace` 失败时，原件会以 `airlift-replaced-<token>` 的名字**留在设备的 Media 目录里**。这个文件用普通文件管理器或「文件」App 看不到，而且 **`restore_sounds()` 在没有备份时会直接报错拒绝执行**——GUI 里也没有翻找 Media 的按钮。也就是说，**失败时用户会以为原件的最后一份副本丢了，其实它还在设备里。** 这个脚本用来把它捞出来。
+
+**使用时机**：
+1. **写操作之前先跑 `scan`**——若有残留，说明之前有操作中断过，先抢救再继续
+2. **`replace` 报错或 `previousSize` 为 null 时立刻跑 `scan`**
+
+**验证状态（比 `预检.bat` 强得多）**：本脚本已用 pymobiledevice3 的**实际安装版本**核对 API 签名（`listdir` / `get_file_contents` / `connect` 三个调用全部存在，且经 `getsource` 确认均为 `async def`），并用**模拟设备对象跑通 5 个场景**：干净设备、发现被移出的原件、staging 目录残留、`pull` 抢救（含字节一致性校验通过）、`pull` 不存在文件（正确返回退出码 1）。语法检查通过。
+
+> 注意：仍需真机才能验证端到端行为（本机未连接 iPhone）。但逻辑分支与 API 契约已验证。
 
 ### 🔴 音频资源的格式陷阱（本项目最大的坑）
 
@@ -159,6 +184,12 @@ original-StopDisclosure.caf           6b9dd7f8a267a79b1ee2184e52d447c541f4bc7683
 **「开发者模式」无需打开**（本方案不需要）。
 
 ### 步骤 2：先 dump 原件（🔴 关键设计）
+
+> **在跑 read 之前，先做一次零风险的设备体检：**
+> ```cmd
+> python 设备体检.py scan
+> ```
+> 它只读 Media 目录，不触发 exploit。如果报告发现 `airlift-replaced-*` 或 `airlift-recovered-*`，**先按第四章把它抢救出来**，再继续——那可能是之前中断留下的原件。
 
 ```cmd
 pip install pymobiledevice3
@@ -234,7 +265,24 @@ python airlift.py replace /var/mobile/Library/CallServices/Greetings/default/Sta
 
 唯一失败模式：**原件被移到 Media 后没被写回**，表现为目标路径缺失文件。
 
-### 找回留在 Media 的原件（AFC 可直接读，无需 exploit）
+### 第一步：用 `设备体检.py` 找到并抢救（✅ 首选，已测试）
+
+```cmd
+python 设备体检.py scan
+```
+
+它会列出 Media 里的所有 `airlift-*` 残留，标出哪些可能是原件、给出大小与 SHA256，**并直接打印出该执行的抢救命令**。然后：
+
+```cmd
+python 设备体检.py pull /var/mobile/Media/airlift-replaced-XXX rescued.bin
+```
+
+抢救后把打印出来的 SHA256 与我们已知的原件哈希（见附录）比对。**如果匹配，你就找回了唯一的一份原件，务必立刻复制到 U 盘。**
+
+> 这个脚本是只读的，跑多少次都不会改动设备；对比下面那段手工命令也安全得多。
+
+<details>
+<summary>备用：不用脚本时的手工命令（等价，但更容易写错）</summary>
 
 ```cmd
 python -c "import asyncio; from pymobiledevice3.lockdown import create_using_usbmux; from pymobiledevice3.services.afc import AfcService
@@ -248,7 +296,9 @@ async def m():
 asyncio.run(m())"
 ```
 
-### 写回（此时目标路径是空的，用 `write` 正好适用）
+</details>
+
+### 第二步：写回（此时目标路径是空的，用 `write` 正好适用）
 
 ```cmd
 python airlift.py write /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf rescued.caf --logging

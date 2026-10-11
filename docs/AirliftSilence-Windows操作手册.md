@@ -30,6 +30,7 @@
 |---|---|
 | **`预检.bat`** | ✅ **第一件事就双击运行它**（校验哈希、驱动、Python、设备连接） |
 | **`设备体检.py`** | ✅ **只读救援工具**，写操作前后都该跑（详见第四章） |
+| **`静音件生成.sh`** | ✅ **哈希不匹配时的回退方案**：按原件实际格式生成静音件。**需在 Mac 上跑**，产出再拷来 Windows |
 | `AirliftSilence-v1.0.0.exe` | 图形界面主程序（37 MB，官方 v1.0.0） |
 | `src/airlift.py` | 源码：命令行版（**推荐用它，日志更全，便于排障**） |
 | `src/airlift_gui.py` | 源码：图形界面版 |
@@ -108,7 +109,16 @@ python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StartD
 
 1. **对比格式**：把 dump 出来的文件和 `silent-ios-format/original-*` 用 `shasum`/`certutil` 对比。
    - 如果 `backup-StopDisclosure.caf` 与 `original-StopDisclosure.caf` **哈希一致** → 你的设备音频与作者 dump 的完全一样，`silent-ios-format/` 那套可以放心用
-   - 如果**不一致** → 说明你的系统版本音频有差异，**先停下来**，把 dump 出来的原件保管好，用它的格式和时长去重新生成静音件再用
+   - 如果**不一致** → 说明你的系统版本音频有差异，**先停下来**，把 dump 出来的原件保管好，然后用 `静音件生成.sh` 按它的格式重新生成静音件（**这一步要回 Mac 上做**）：
+
+     ```sh
+     ./静音件生成.sh backup-StopDisclosure.caf
+     ./静音件生成.sh backup-StartDisclosureWithTone.m4a
+     ```
+
+     生成结果会自带四项校验（编码/采样率/声道/时长）。把产出拷回 Windows 使用。
+
+     ⚠️ 实测提示：`ffmpeg` **无法把 Opus 封装进 CAF**，而真机的 `StopDisclosure.caf` 正是 Opus/CAF——所以这个脚本对 CAF 走的是 macOS 的 `afconvert`，**别试图在 Windows 上生成 CAF**。
 2. **把 dump 出来的原件复制到 U 盘 / 云盘**，不要只留在 Windows 上
 
 ### 步骤 4：替换为静音

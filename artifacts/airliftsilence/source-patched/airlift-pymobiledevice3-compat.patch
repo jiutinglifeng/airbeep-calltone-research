@@ -1,0 +1,42 @@
+--- src/airlift.py	2026-10-11 14:01:17
++++ source-patched/airlift.py	2026-10-11 14:22:59
+@@ -372,10 +372,37 @@
+     for md in mux:
+         try:
+             ld = await create_using_usbmux(serial=md.serial)
+-            pt = ld.product_type or ""
++
++            # --- 补丁开始：设备型号探测兼容新旧 pymobiledevice3 ---
++            # 上游原代码是 `pt = ld.product_type or ""`。但在 pymobiledevice3
++            # 11.x 里，lockdown 客户端**没有** product_type 这个属性（它只属于
++            # irecv 子系统），该行会抛 AttributeError，被下面那句
++            # `except Exception: continue` 静默吞掉 —— 结果是**每一台设备都被
++            # 跳过**，最终报出与实际原因无关的 "no paired iPhone found"。
++            # 这里改成三级兜底：属性 → all_values → get_value。
++            pt = getattr(ld, "product_type", None)
++            if not pt:
++                try:
++                    pt = (getattr(ld, "all_values", None) or {}).get("ProductType")
++                except Exception:
++                    pt = None
++            if not pt:
++                try:
++                    pt = await ld.get_value(key="ProductType")
++                except Exception:
++                    pt = None
++            pt = pt or ""
++            # --- 补丁结束 ---
++
+             if not pt.startswith("iPhone"):
+                 continue
+-            ver = ld.product_version or "unknown"
++            ver = getattr(ld, "product_version", None)
++            if not ver:
++                try:
++                    ver = await ld.get_value(key="ProductVersion")
++                except Exception:
++                    ver = None
++            ver = ver or "unknown"
+             bld = await ld.get_value(key="BuildVersion") or "unknown"
+             nm = await ld.get_value(key="DeviceName") or pt
+             devices.append({"udid": md.serial, "product": pt, "version": ver,

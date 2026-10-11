@@ -93,7 +93,9 @@ iOS 27.0.1 上所有 airlift 系工具都曾因设备报 `Grappa session could n
 | **`设备体检.py`** | ✅ **写操作前后都该跑**：只读扫描设备 Media 里的残留文件（见下方说明） | 纯文本，无需校验 |
 | **`静音件生成.sh`** | ✅ **哈希不匹配时的回退方案**：按设备原件格式生成匹配的静音件（**需在 Mac 上跑**） | 纯文本，无需校验 |
 | `AirliftSilence-v1.0.0.exe` | 图形界面主程序，37 MB，PE32+ x86-64，**无 Authenticode 签名** | `3bb09e07d22660b9f98c3dd12cedd177af5802040d8c7aee52d89974e1de6e5e` |
-| `src/airlift.py` | ✅ **推荐用命令行版**，日志更全便于排障（651 行） | `d15d59a0d86b4a6c3d8606eb50798fe30f77dbd72c1bb5cf2de1e53e3d8bb6e0` |
+| `src/airlift.py` | ⚠️ **原版有 bug，不要用**（651 行），见下方「🔴 必读」 | `d15d59a0d86b4a6c3d8606eb50798fe30f77dbd72c1bb5cf2de1e53e3d8bb6e0` |
+| **`source-patched/`** | ✅ **实际要用的目录**：`airlift.py`(修补版) + `airlift_gui.py` + `silent/`，自包含。CLI 和 GUI 都受益 | `airlift.py` = `8b068e600b306bac8da982a7736c6017d0314a9c41e46666752c9065a3b44903` |
+| `source-patched/airlift-pymobiledevice3-compat.patch` | 修补内容的补丁原文，便于核对 | — |
 | `src/airlift_gui.py` | 图形界面源码（251 行） | `cadfc463a646c666db0816e5da306402d14fde4798d933cfe82fcd47cfb5e88f` |
 | `src/README.zh-CN.md` | 作者原版中文说明 | — |
 | `src/silent/` | ⚠️ **Windows 版自带静音件，格式不匹配，不要用** | `efcde5b8…` / `c8ccb2c4…` |
@@ -136,6 +138,38 @@ python 设备体检.py pull <路径> <本地文件>       # 把残留文件抢�
 **验证状态（比 `预检.bat` 强得多）**：本脚本已用 pymobiledevice3 的**实际安装版本**核对 API 签名（`listdir` / `get_file_contents` / `connect` 三个调用全部存在，且经 `getsource` 确认均为 `async def`），并用**模拟设备对象跑通 5 个场景**：干净设备、发现被移出的原件、staging 目录残留、`pull` 抢救（含字节一致性校验通过）、`pull` 不存在文件（正确返回退出码 1）。语法检查通过。
 
 > 注意：仍需真机才能验证端到端行为（本机未连接 iPhone）。但逻辑分支与 API 契约已验证。
+
+### 🔴 必读：原版 `src/airlift.py` 有一个会让你误判的 bug
+
+**症状**：设备明明连上了、也点了「信任此电脑」，工具却报 `no paired iPhone found`。
+
+**原因**（已在本机用 pymobiledevice3 **11.26.1** 复现确认）：`airlift.py:375` 有一行
+
+```python
+pt = ld.product_type or ""
+```
+
+但 pymobiledevice3 11.x 的 **lockdown 客户端没有 `product_type` 属性**——`product_type` 只属于 irecv（DFU 恢复模式）子系统。这行抛 `AttributeError`，而它下一行就是
+
+```python
+except Exception:
+    continue
+```
+
+**异常被静默吞掉、每台设备都被跳过**，最后抛出与实际原因毫无关系的 `no paired iPhone found`。
+
+**为什么作者验证通过了你却会踩到**：两个仓库（上游 `DahanGuy/airlift-windows` 和 `YiHoooong/AirliftSilence`）**都没有 pin pymobiledevice3 版本**，README 只写 `pip install pymobiledevice3`。该库在 PyPI 上已有 **700+ 个版本**、迭代极快，属性会随版本漂移。
+
+**所以：用 `source-patched/airlift.py`，不要用 `src/airlift.py`。** 命令改成：
+
+```cmd
+cd source-patched
+python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf backup-StopDisclosure.caf --logging
+```
+
+修补内容只有 `_resolve_device` 里的设备型号探测，改成「属性 → `all_values` → `get_value`」三级兜底，**新旧版本的 pymobiledevice3 都能工作**。
+
+> **已验证**：用假的 lockdown 对象跑修补后的函数，无论客户端有没有 `product_type` 都能正确识别设备；非 iPhone 设备仍被正确跳过。并用 AST 确认修改后的文件里再没有裸的属性访问。补丁原文见 `source-patched/airlift-pymobiledevice3-compat.patch`。
 
 ### `静音件生成.sh` 做什么（哈希不匹配时的回退方案）
 
@@ -229,10 +263,13 @@ original-StopDisclosure.caf           6b9dd7f8a267a79b1ee2184e52d447c541f4bc7683
 
 ```cmd
 pip install pymobiledevice3
-cd src
+cd source-patched
+
 python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf backup-StopDisclosure.caf --logging
 python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StartDisclosureWithTone.m4a backup-StartDisclosureWithTone.m4a --logging
 ```
+
+> 🔴 **注意这里是 `cd source-patched`，不是 `cd src`。** `src/airlift.py` 原版有设备识别 bug，会让你误以为手机没连上——原因见第五章「必读」。静音文件和 `backup-*.caf` 会被写到 `source-patched/` 目录下。
 
 **为什么先跑 `read`：**
 - `read` 是**往返操作**（移到 Media → 读出 → 写回原位），成功时文件回到原样

@@ -74,11 +74,11 @@
 
 ### 步骤 2：检查设备（先跑这个）
 
-**推荐用源码方式，日志更全：**
+> 🔴 **必须用 `source-patched/` 里的版本，不要用 `src/`。** 原版 `airlift.py` 有一处设备识别 bug，会报出与实际原因无关的 `no paired iPhone found`，让你误以为手机没连上。原因与验证见第五章「必读」。
 
 ```cmd
 pip install pymobiledevice3
-cd src
+cd source-patched
 python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StopDisclosure.caf device-StopDisclosure.caf --logging
 ```
 
@@ -226,6 +226,33 @@ python airlift.py write <目标路径> <你的备份文件> --logging
 ---
 
 ## 五、项目背景（供排障参考）
+
+### 🔴 必读：原版 `airlift.py` 的设备识别 bug
+
+**症状**：设备明明连上了、也点了「信任此电脑」，工具却报 `no paired iPhone found`。
+
+**原因**（已在本机用 pymobiledevice3 **11.26.1** 复现）：`airlift.py:375` 有一行
+
+```python
+pt = ld.product_type or ""
+```
+
+但 pymobiledevice3 11.x 的 **lockdown 客户端没有 `product_type` 属性**——它只属于 irecv（DFU 恢复模式）子系统。这行抛 `AttributeError`，紧接着就是
+
+```python
+except Exception:
+    continue
+```
+
+**异常被静默吞掉、每台设备都被跳过**，最终抛出与实际原因无关的 `no paired iPhone found`。
+
+**为什么作者验证通过了你却会踩到**：上游两个仓库都**没有 pin pymobiledevice3 版本**（README 只写 `pip install pymobiledevice3`），而该库在 PyPI 上已有 **700+ 个版本**，属性会随版本漂移。
+
+**解决办法**：用 `source-patched/airlift.py`。修补只改设备型号探测，改成「属性 → `all_values` → `get_value`」三级兜底，**新旧版本都能工作**。补丁原文在 `source-patched/airlift-pymobiledevice3-compat.patch`。
+
+> 已验证：用假 lockdown 对象跑修补后的函数，有无 `product_type` 都能正确识别设备，非 iPhone 仍被跳过；并用 AST 确认无残留的裸属性访问。
+
+---
 
 - **原理**：AirTraffic / ATAirlock 沙盒逃逸，与 AirBeep 同源
 - **入口**：经典 USB lockdown + `AirTrafficHost.dll`（不是 AirBeep 那条 RSD shim 隧道）

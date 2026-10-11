@@ -78,22 +78,71 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+async def _device_info(lockdown) -> tuple[str, str, str, str]:
+    """读取设备信息，返回 (产品型号, 系统版本, 构建号, 设备名)。
+
+    刻意写成对 pymobiledevice3 版本变化不敏感的形式：
+    该库迭代极快（PyPI 上已有 700+ 个版本），属性名会随重构变动。
+    例如 `product_version` / `product_build_version` 是 property，
+    而 `product_type` 在 lockdown 客户端上**并不存在**（它只属于 irecv
+    子系统），照抄就会抛 AttributeError。所以每个字段都按
+    「属性优先 → all_values → get_value」三级兜底。
+    """
+    # ---- 产品型号 ----
+    pt = getattr(lockdown, "product_type", None)
+    if not pt:
+        try:
+            pt = (getattr(lockdown, "all_values", None) or {}).get("ProductType")
+        except Exception:
+            pt = None
+    if not pt:
+        try:
+            pt = await lockdown.get_value(key="ProductType")
+        except Exception:
+            pt = None
+
+    # ---- 系统版本 ----
+    ver = getattr(lockdown, "product_version", None)
+    if not ver:
+        try:
+            ver = await lockdown.get_value(key="ProductVersion")
+        except Exception:
+            ver = None
+
+    # ---- 构建号 ----
+    bld = getattr(lockdown, "product_build_version", None)
+    if not bld:
+        try:
+            bld = await lockdown.get_value(key="BuildVersion")
+        except Exception:
+            bld = None
+
+    # ---- 设备名 ----
+    try:
+        nm = await lockdown.get_value(key="DeviceName")
+    except Exception:
+        nm = None
+
+    pt = pt or "unknown"
+    return (str(pt), str(ver or "unknown"), str(bld or "unknown"), str(nm or pt))
+
+
 async def _connect():
     print("正在查找已连接的 iPhone …")
     lockdown = await create_using_usbmux()
     afc = AfcService(lockdown=lockdown)
     await afc.connect()
-    try:
-        info = await lockdown.get_value(key="ProductVersion")
-        build = await lockdown.get_value(key="BuildVersion")
-        name = await lockdown.get_value(key="DeviceName")
-        print(f"✓ 已连接：{name} · iOS {info} ({build})")
-        if (info, build) == ("27.0.1", "24A446"):
-            print("  ✅ 系统版本与已验证环境完全一致")
-        else:
-            print("  ⚠ 该系统版本未在作者验证范围内，仅作参考")
-    except Exception:
-        print("  （无法读取设备版本信息，继续）")
+
+    pt, ver, bld, name = await _device_info(lockdown)
+    print(f"✓ 已连接：{name} · {pt} · iOS {ver} ({bld})")
+
+    if (ver, bld) == ("27.0.1", "24A446"):
+        print("  ✅ 系统版本与已验证环境完全一致")
+    else:
+        print(f"  ⚠ 该系统版本未在作者验证范围内（作者验证的是 27.0.1 / 24A446），仅作参考")
+
+    if "iPhone" not in pt and pt != "unknown":
+        print(f"  ⚠ 产品型号 '{pt}' 看起来不是 iPhone，请确认连的是目标设备")
     print()
     return afc
 

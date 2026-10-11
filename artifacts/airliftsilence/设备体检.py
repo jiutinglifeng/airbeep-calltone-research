@@ -47,12 +47,28 @@ import posixpath
 import sys
 from typing import Iterable
 
-try:
-    from pymobiledevice3.lockdown import create_using_usbmux
-    from pymobiledevice3.services.afc import AfcService
-except ImportError:
-    print("缺少依赖，请先运行：  pip install pymobiledevice3", file=sys.stderr)
-    raise SystemExit(2)
+# pymobiledevice3 的 import 延后到真正连设备时再做。
+# 原因：模块级 import 会让本文件无法在没装依赖的环境下被导入 —— 既不利于
+# 单元测试/演练（本仓库的 演练-救援流程.py 就需要导入它但不需要真依赖），
+# 也让「缺依赖」这个错误在 import 阶段就抛出、掩盖了真正的用法说明。
+_create_using_usbmux = None
+_AfcService = None
+
+
+def _ensure_deps():
+    """按需加载 pymobiledevice3。只在真正要连设备时调用。"""
+    global _create_using_usbmux, _AfcService
+    if _create_using_usbmux is not None:
+        return
+    try:
+        from pymobiledevice3.lockdown import create_using_usbmux
+        from pymobiledevice3.services.afc import AfcService
+    except ImportError:
+        print("缺少依赖，请先运行：  pip install pymobiledevice3", file=sys.stderr)
+        raise SystemExit(2)
+    _create_using_usbmux = create_using_usbmux
+    _AfcService = AfcService
+
 
 MEDIA_ROOT = "/var/mobile/Media"
 
@@ -128,9 +144,12 @@ async def _device_info(lockdown) -> tuple[str, str, str, str]:
 
 
 async def _connect():
+    # 先确认依赖，再打印动作。否则缺依赖时会先输出「正在查找…」再报错，
+    # 看起来像是真的去找过设备了。
+    _ensure_deps()
     print("正在查找已连接的 iPhone …")
-    lockdown = await create_using_usbmux()
-    afc = AfcService(lockdown=lockdown)
+    lockdown = await _create_using_usbmux()
+    afc = _AfcService(lockdown=lockdown)
     await afc.connect()
 
     pt, ver, bld, name = await _device_info(lockdown)
@@ -147,14 +166,14 @@ async def _connect():
     return afc
 
 
-async def _listdir(afc: AfcService, path: str) -> list[str]:
+async def _listdir(afc: "AfcService", path: str) -> list[str]:
     try:
         return await afc.listdir(path)
     except Exception:
         return []
 
 
-async def cmd_list(afc: AfcService) -> int:
+async def cmd_list(afc: "AfcService") -> int:
     print(f"== {MEDIA_ROOT} 根目录 ==")
     entries = await _listdir(afc, MEDIA_ROOT)
     if not entries:
@@ -179,7 +198,7 @@ async def cmd_list(afc: AfcService) -> int:
     return 0
 
 
-async def _probe(afc: AfcService, abspath: str) -> tuple[str, int, str]:
+async def _probe(afc: "AfcService", abspath: str) -> tuple[str, int, str]:
     """判断路径是文件还是目录，并取回详情。
 
     不依赖 stat() 的字段名——直接用「能不能读出内容」来区分：
@@ -206,7 +225,7 @@ async def _probe(afc: AfcService, abspath: str) -> tuple[str, int, str]:
     return ("unknown", 0, "无法读取（既不是可读文件，也不是可列目录）")
 
 
-async def cmd_scan(afc: AfcService) -> int:
+async def cmd_scan(afc: "AfcService") -> int:
     print("== 扫描残留 ==")
     print()
 
@@ -254,7 +273,7 @@ async def cmd_scan(afc: AfcService) -> int:
     return 0
 
 
-async def cmd_pull(afc: AfcService, remote: str, local: str) -> int:
+async def cmd_pull(afc: "AfcService", remote: str, local: str) -> int:
     if not remote.startswith("/"):
         remote = posixpath.join(MEDIA_ROOT, remote)
     print(f"正在读取 {remote} …")

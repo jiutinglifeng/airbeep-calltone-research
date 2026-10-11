@@ -150,7 +150,18 @@ python airlift.py replace /var/mobile/Library/CallServices/Greetings/default/Sta
 
 ## 四、如果中途失败怎么救
 
+> 📋 **出错时先查 [失败签名对照表](失败签名对照表.md)** —— 它把 `airlift.py` 的全部错误串映射到具体动作。
+
 这套机制的失败模式只有一种：**原件被移到 Media 后没被写回**，表现为目标路径缺失文件。**不会变砖**——它只是移动和写入文件，不刷固件、不动系统分区。
+
+**先记住一个关键认知**：`read` 和 `replace` **都不是只读操作**，两者都要先把目标文件移动到 Media。区别只在失败后目标里剩什么：
+
+| 操作 | 失败后目标里剩下 | 原件位置 |
+|---|---|---|
+| `read` | **空**（CallServices 缺文件） | Media 的 `airlift-recovered-<token>` |
+| `replace` | **静音版**（可用） | Media 的 `airlift-replaced-<token>` |
+
+**两种情况下原件都还在 Media 里，都能用 `设备体检.py` 救回来。**
 
 ### 🔴 首选方法：用 `设备体检.py`（只读，已测试）
 

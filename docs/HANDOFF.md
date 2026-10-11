@@ -171,6 +171,8 @@ python airlift.py read /var/mobile/Library/CallServices/Greetings/default/StopDi
 
 > **已验证**：用假的 lockdown 对象跑修补后的函数，无论客户端有没有 `product_type` 都能正确识别设备；非 iPhone 设备仍被正确跳过。并用 AST 确认修改后的文件里再没有裸的属性访问。补丁原文见 `source-patched/airlift-pymobiledevice3-compat.patch`。
 
+> **📮 可选的贡献**：截至 2026-10-11，上游两个仓库（`DahanGuy/airlift-windows`、`YiHoooong/AirliftSilence`）**都没有任何 issue 提到这个问题**（已用 GitHub 搜索确认，`product_type` 关键词命中 0 条）。如果你在 Windows 上实际踩到了它，可以考虑给作者提个 issue——这属于依赖未 pin 版本导致的 API 漂移，对作者也有价值。修复代码已在 `source-patched/`，可直接引用。当然这不是必须做的，不影响你的目标。
+
 ### `静音件生成.sh` 做什么（哈希不匹配时的回退方案）
 
 **触发条件**：操作流程步骤 3 要求把设备原件 dump 下来、与作者 dump 的 `original-*` 比对 SHA256。**如果哈希不一致**，说明你设备上的音频资产与作者那台不同（作者自己承认这些文件会被 Apple 的 MobileAsset 静默更新替换过）——此时**绝对不能**直接写入 `silent-ios-format/` 那套静音件，必须按你设备的实际格式重新生成。

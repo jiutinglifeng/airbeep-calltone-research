@@ -46,3 +46,4 @@ For an unsigned IPA, run the `Release unsigned IPA` workflow in GitHub Actions. 
 ## License
 
 AirBeep is released under the [GNU General Public License v3.0](LICENSE).
+

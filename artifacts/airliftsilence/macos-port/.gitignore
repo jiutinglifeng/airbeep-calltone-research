@@ -1,0 +1,7 @@
+# 真实设备文件与配对缓存，不应提交
+backup-*.caf
+backup-*.m4a
+device-backup-*
+verify-*
+.venv/
+__pycache__/

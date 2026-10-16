@@ -17,6 +17,7 @@ import sys
 import time
 import uuid
 import zipfile
+from pathlib import Path
 from typing import Any
 
 from pymobiledevice3.lockdown import create_using_usbmux
@@ -420,15 +421,35 @@ async def _cleanup(afc, src, lnk, rec, saved, saved_dirs):
     await asyncio.sleep(2)
     await _restore_books(afc, saved, saved_dirs)
 
+async def _usbmux_connect(**kwargs):
+    """统一的 usbmux 连接入口，支持自定义配对记录缓存目录。
+
+    pymobiledevice3 默认把配对记录放在 $HOME/.pymobiledevice3。若该路径不可写
+    （受限环境、只读 HOME、容器、沙箱等），它会抛
+    `PermissionError: Operation not permitted` —— 看起来像设备问题，实际是
+    写权限问题，很容易误判。
+
+    设环境变量 AIRLIFT_PAIRING_CACHE 可覆盖，例如：
+        AIRLIFT_PAIRING_CACHE=/tmp/pd3-pairing python airlift.py read ...
+    """
+    cache = os.environ.get("AIRLIFT_PAIRING_CACHE")
+    if cache:
+        Path(cache).mkdir(parents=True, exist_ok=True)
+        kwargs.setdefault("pairing_records_cache_folder", Path(cache))
+    return await create_using_usbmux(**kwargs)
+
+
 async def _resolve_device(requested: str | None = None):
     mux = await list_mux_devices()
     if not mux:
         raise AirLiftError("no USB devices found")
 
+    _resolve_errors: list[str] = []
+
     devices = []
     for md in mux:
         try:
-            ld = await create_using_usbmux(serial=md.serial)
+            ld = await _usbmux_connect(serial=md.serial)
 
             # --- 补丁开始：设备型号探测兼容新旧 pymobiledevice3 ---
             # 上游原代码是 `pt = ld.product_type or ""`。但在 pymobiledevice3
@@ -465,11 +486,19 @@ async def _resolve_device(requested: str | None = None):
             devices.append({"udid": md.serial, "product": pt, "version": ver,
                             "build": bld, "name": nm,
                             "tested": (ver, bld) in TESTED_BUILDS, "lockdown": ld})
-        except Exception:
+        except Exception as exc:
+            # 上游这里是裸 `continue`，把真实原因静默吞掉，最终只报出一句
+            # 与实际原因无关的 "no paired iPhone found"。这个设计已经导致过
+            # 两次误判（product_type 属性不存在、Path 未导入），所以这里必须
+            # 把原因留下来。
+            _resolve_errors.append(f"{getattr(md, 'serial', '?')}: {type(exc).__name__}: {exc}")
             continue
 
     if not devices:
-        raise AirLiftError("no paired iPhone found")
+        detail = ""
+        if _resolve_errors:
+            detail = "\n每台设备的失败原因：\n  " + "\n  ".join(_resolve_errors)
+        raise AirLiftError("no paired iPhone found" + detail)
 
     if requested:
         for d in devices:

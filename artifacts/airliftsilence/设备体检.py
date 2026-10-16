@@ -43,8 +43,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import posixpath
 import sys
+from pathlib import Path
 from typing import Iterable
 
 # pymobiledevice3 的 import 延后到真正连设备时再做。
@@ -148,7 +150,28 @@ async def _connect():
     # 看起来像是真的去找过设备了。
     _ensure_deps()
     print("正在查找已连接的 iPhone …")
-    lockdown = await _create_using_usbmux()
+
+    # 配对记录缓存目录：默认在 $HOME/.pymobiledevice3。若该路径不可写
+    # （受限环境、只读 HOME、容器等），pymobiledevice3 会抛
+    # PermissionError: Operation not permitted，看起来像设备问题其实是
+    # 写权限问题。可用 AIRLIFT_PAIRING_CACHE 覆盖。
+    kwargs = {}
+    cache = os.environ.get("AIRLIFT_PAIRING_CACHE")
+    if cache:
+        Path(cache).mkdir(parents=True, exist_ok=True)
+        kwargs["pairing_records_cache_folder"] = Path(cache)
+        print(f"  配对记录缓存: {cache}")
+
+    try:
+        lockdown = await _create_using_usbmux(**kwargs)
+    except PermissionError as exc:
+        print(f"✗ 无法建立连接：{exc}", file=sys.stderr)
+        print("   这通常是 pymobiledevice3 不能写配对记录缓存目录导致的，"
+              "与设备无关。", file=sys.stderr)
+        print("   试试：  AIRLIFT_PAIRING_CACHE=/tmp/pd3-pairing python 设备体检.py scan",
+              file=sys.stderr)
+        raise SystemExit(1)
+
     afc = _AfcService(lockdown=lockdown)
     await afc.connect()
 

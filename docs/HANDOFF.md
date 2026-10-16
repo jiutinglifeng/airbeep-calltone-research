@@ -1,9 +1,51 @@
 # HANDOFF — 通话录音提示音消除项目
 
-> **给下一个 AI 会话的交接文档。** 请先完整读本文，再动手。
 > 本文写于 2026-10-11，用途是让重新开始的会话**零上下文损失**地接上。
->
-> **一句话现状**：方案已确定、材料已备齐、操作手册已写完，**尚未在真机上执行任何写操作**。
+
+---
+
+## ✅ 执行结果（2026-10-16 更新：已在真机上完成）
+
+**macOS 路线成功跑通，两个提示音文件均已替换为静音版并验证。**
+
+设备：iPhone 19,7（`旧亭离风的iPhone`）· iOS 27.0.1 (24A446) · UDID `00008160-0012689C2150000A`
+
+| 步骤 | 结果 |
+|---|---|
+| lockdown 连接 | ✅ 不需要信任弹窗（Mac 与手机此前已配对） |
+| 设备解析（含 `product_type` 修复） | ✅ `iPhone19,7` / `27.0.1` / `24A446` |
+| `read` dump 原件（AirTraffic 逃逸） | ✅ 完整跑通，41944 + 46584 字节 |
+| 生成静音件（按实际格式） | ✅ Stop 1.520000s 精确一致 / Start 差 0.7ms |
+| `replace` 替换 | ✅ 两次都返回 `previousSize` 非 null |
+| **读回验证** | ✅ **设备上的文件与写入的静音件哈希完全一致** |
+
+### 🔴 本次最重要的实测发现：静音件不能照搬
+
+| 文件 | 本设备（24A446） | 上游作者 dump | 上游配套静音件 |
+|---|---|---|---|
+| `StopDisclosure.caf` | Opus 48k **1.520000 s** | Opus 48k 1.920000 s | 1.940000 s |
+| `StartDisclosureWithTone.m4a` | AAC 44.1k **1.618639 s** | AAC 44.1k 1.618639 s | 1.671837 s |
+
+**Stop 提示音相差 400 毫秒。** 若直接使用上游配套静音件，会比本设备原件长 420 毫秒。
+
+**所以必须先 dump、再按实际时长生成**——这正是 `静音件生成.sh` 的用途，它把原本只是"以防万一"的回退方案变成了必需品。本设备实际使用的静音件在 `macos-port/silent-Stop.caf` 与 `macos-port/silent-Start.m4a`。
+
+真机原件副本已存档在 `artifacts/airliftsilence/设备原件备份-24A446/`。
+
+### 执行过程中踩到的两个坑（均已修复）
+
+1. **`Path` 未导入**：`macos-port/airlift.py` 里 `from pathlib import Path` 缺失，新加的辅助函数抛 `NameError`——**又被 `except Exception: continue` 静默吞掉**，报出误导性的 `no paired iPhone found`。已补 import。
+2. **配对缓存目录不可写**：pymobiledevice3 默认写 `$HOME/.pymobiledevice3`；在受限环境下抛 `PermissionError: Operation not permitted`，看起来像设备问题。已加 `AIRLIFT_PAIRING_CACHE` 环境变量支持：
+
+```sh
+AIRLIFT_PAIRING_CACHE=/tmp/pd3-pairing python airlift.py read ...
+```
+
+同时**改掉了上游那个静默吞异常的设计**——`_resolve_device` 现在会把每台设备的真实失败原因附在错误信息里，避免再次误判。
+
+### ⏳ 尚未完成的一项
+
+**真正的通话实测**（约束④）：还没有实际打一通电话录音来确认提示音消失，也**没有重启后复测**——而第三方报告曾指出"重启后提示音会回来"（iOS 18.7.8）。这两项需要设备在手时人工完成。
 
 ---
 

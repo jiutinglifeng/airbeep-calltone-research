@@ -1,6 +1,6 @@
---- source-patched/airlift.py	2026-10-11 14:22:59
-+++ macos-port/airlift.py	2026-10-11 14:26:28
-@@ -55,12 +55,36 @@
+--- source-patched/airlift.py	2026-10-16 11:48:34
++++ macos-port/airlift.py	2026-10-16 11:46:17
+@@ -56,12 +56,36 @@
      "0101fc26f7e89d1635d86b5c886df69f526a0040038b6c33049f6bd5cc526b4ee7ccce614135d2c73f8326d9af6d28399a231510917493d4fdaa395b4d1c1e1b09bdf3fe6fb7e16ad6d5f5cc18b93730874e6f4e",
  )
  
@@ -37,7 +37,7 @@
  class AirLiftError(RuntimeError):
      def __init__(self, message: str, details: dict | None = None):
          super().__init__(message)
-@@ -74,21 +98,11 @@
+@@ -75,21 +99,11 @@
  
  class AppleCF:
      def __init__(self):
@@ -63,7 +63,7 @@
          vp = ctypes.c_void_p
          for fn, ret, args in [
              (self.cf.CFStringCreateWithCString,   vp, [vp, ctypes.c_char_p, ctypes.c_uint32]),
-@@ -113,6 +127,49 @@
+@@ -114,6 +128,49 @@
                  fn.restype = ret
              fn.argtypes = args
  
@@ -112,4 +112,24 @@
 +
      def cfstr(self, s: str):
          return self.cf.CFStringCreateWithCString(None, s.encode(), 0x08000100)
+ 
+@@ -388,6 +445,7 @@
+         raise AirLiftError("no USB devices found")
+ 
+     _resolve_errors: list[str] = []
++
+     devices = []
+     for md in mux:
+         try:
+@@ -430,8 +488,9 @@
+                             "tested": (ver, bld) in TESTED_BUILDS, "lockdown": ld})
+         except Exception as exc:
+             # 上游这里是裸 `continue`，把真实原因静默吞掉，最终只报出一句
+-            # 与实际原因无关的 "no paired iPhone found"。这个设计已导致过
+-            # 两次误判（product_type 属性不存在、Path 未导入），故留下原因。
++            # 与实际原因无关的 "no paired iPhone found"。这个设计已经导致过
++            # 两次误判（product_type 属性不存在、Path 未导入），所以这里必须
++            # 把原因留下来。
+             _resolve_errors.append(f"{getattr(md, 'serial', '?')}: {type(exc).__name__}: {exc}")
+             continue
  
